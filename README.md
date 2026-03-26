@@ -2,6 +2,13 @@
 
 AI-powered procurement tender ingestion and matching platform. Ingests public tenders from the EU's TED database and Portugal's dados.gov.pt, indexes them with Elasticsearch (Portuguese + English analyzers), generates vector embeddings for semantic matching, and scores them against company profiles.
 
+<img width="1920" height="961" alt="Screenshot 2026-03-26 at 6 11 54 PM" src="https://github.com/user-attachments/assets/7c4219ea-561c-4f78-bd4f-d65772eb54d7" />
+
+<img width="1920" height="960" alt="Screenshot 2026-03-26 at 6 12 54 PM" src="https://github.com/user-attachments/assets/d99d9bdd-1a99-4e86-94f3-f6ce2ee05d55" />
+
+<img width="1920" height="962" alt="Screenshot 2026-03-26 at 6 13 25 PM" src="https://github.com/user-attachments/assets/2a44edde-fe55-414c-a703-7e771e642c0e" />
+
+
 ## Quick Start
 
 ```bash
