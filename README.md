@@ -7,7 +7,7 @@ AI-powered procurement tender ingestion and matching platform. Ingests public te
 ```bash
 # 1. Clone and configure
 cp .env.example .env
-# Set your OPENAI_API_KEY in .env (required for matching features)
+# Set your MISTRAL_API_KEY in .env (free tier, no credit card — https://console.mistral.ai/)
 
 # 2. Start all services
 docker compose up -d
@@ -69,7 +69,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
 | ORM | GORM | Auto-migration, custom Zap logger |
 | Database | PostgreSQL + pgvector | Relational storage + vector similarity search |
 | Search | Elasticsearch 8.x | BM25 scoring, Portuguese language analysis |
-| Embeddings | OpenAI text-embedding-3-small | 1536-dim vectors, cost-effective |
+| Embeddings | Mistral AI mistral-embed | 1024-dim vectors, free tier, no credit card |
 | Logging | Zap | Structured, zero-allocation, env-aware |
 | Frontend | Next.js 14 + Tailwind | Minimal, server-rendered dashboard |
 | Infra | Docker Compose | One-command development setup |

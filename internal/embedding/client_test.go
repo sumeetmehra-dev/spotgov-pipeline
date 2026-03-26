@@ -45,7 +45,7 @@ func TestClient_EmbedTexts(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{
 		apiKey:     "test-key",
-		model:      "text-embedding-3-small",
+		model:      "mistral-embed",
 		dimensions: 4,
 		httpClient: &http.Client{},
 		url:        server.URL,
@@ -79,7 +79,7 @@ func TestClient_EmbedText_Single(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{
 		apiKey:     "test-key",
-		model:      "text-embedding-3-small",
+		model:      "mistral-embed",
 		dimensions: 3,
 		httpClient: &http.Client{},
 		url:        server.URL,

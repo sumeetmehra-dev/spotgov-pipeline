@@ -11,15 +11,15 @@ import (
 )
 
 const (
-	defaultOpenAIURL  = "https://api.openai.com/v1/embeddings"
-	defaultModel      = "text-embedding-3-small"
-	defaultDimensions = 1536
+	defaultMistralURL = "https://api.mistral.ai/v1/embeddings"
+	defaultModel      = "mistral-embed"
+	defaultDimensions = 1024
 )
 
 // Vector is a float64 slice representing an embedding vector.
 type Vector []float64
 
-// Client generates embeddings via the OpenAI API.
+// Client generates embeddings via the Mistral AI API.
 type Client struct {
 	apiKey     string
 	model      string
@@ -31,7 +31,7 @@ type Client struct {
 
 func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
 	if apiKey == "" {
-		return nil, fmt.Errorf("OpenAI API key required")
+		return nil, fmt.Errorf("Mistral API key required: set MISTRAL_API_KEY or pass via config")
 	}
 
 	return &Client{
@@ -39,7 +39,7 @@ func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
 		model:      defaultModel,
 		dimensions: defaultDimensions,
 		httpClient: &http.Client{},
-		url:        defaultOpenAIURL,
+		url:        defaultMistralURL,
 		logger:     logger.Named("embedding"),
 	}, nil
 }
@@ -70,7 +70,7 @@ func (c *Client) EmbedTexts(ctx context.Context, texts []string) ([]Vector, erro
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("call OpenAI API: %w", err)
+		return nil, fmt.Errorf("call Mistral API: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -80,11 +80,11 @@ func (c *Client) EmbedTexts(ctx context.Context, texts []string) ([]Vector, erro
 	}
 
 	if result.Error != nil {
-		return nil, fmt.Errorf("OpenAI API error: %s", result.Error.Message)
+		return nil, fmt.Errorf("Mistral API error: %s", result.Error.Message)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("Mistral API returned status %d", resp.StatusCode)
 	}
 
 	vectors := make([]Vector, len(result.Data))

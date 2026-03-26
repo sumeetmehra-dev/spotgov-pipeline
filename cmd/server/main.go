@@ -58,7 +58,7 @@ func main() {
 
 	// Initialize embedding client (optional — degrades gracefully if no API key)
 	var matcher *matching.Matcher
-	embedCl, err := embedding.NewClient(cfg.OpenAIKey, logger)
+	embedCl, err := embedding.NewClient(cfg.MistralKey, logger)
 	if err != nil {
 		logger.Warn("embedding client unavailable, matching features disabled", zap.Error(err))
 		matcher = matching.NewMatcher(db, nil, embedding.NewStore(db, logger), logger)

@@ -69,7 +69,7 @@ SpotGov Pipeline is a Go service that ingests public procurement tenders from Eu
 
 3. **Storage**: Tenders are bulk-upserted using `ON CONFLICT (source_id)` to handle deduplication. The same tenders are indexed into Elasticsearch with Portuguese and English text analyzers for multi-language search.
 
-4. **Embedding**: OpenAI `text-embedding-3-small` generates 1536-dimensional vectors from tender title + description + buyer + CPV codes. Vectors are stored directly on the tender row using pgvector.
+4. **Embedding**: Mistral AI `mistral-embed` generates 1024-dimensional vectors from tender title + description + buyer + CPV codes. Vectors are stored directly on the tender row using pgvector. Mistral's free tier requires no credit card, keeping the entire stack zero-cost to run.
 
 5. **Matching**: When triggered for a company, the matcher generates an embedding from the company profile, queries pgvector for the top-100 similar tenders by cosine distance, then computes a composite score incorporating CPV overlap (Jaccard index) and value fit (exponential decay outside the company's preferred range).
 
