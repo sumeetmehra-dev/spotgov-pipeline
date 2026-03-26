@@ -1,7 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-gray-50 text-gray-900;
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+}
+
+@layer components {
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide;
+  }
+  .badge-ted {
+    @apply bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-200;
+  }
+  .badge-dados {
+    @apply bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200;
+  }
+  .badge-deadline-urgent {
+    @apply bg-red-50 text-red-700 ring-1 ring-inset ring-red-200;
+  }
+  .badge-deadline-soon {
+    @apply bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200;
+  }
+  .badge-deadline-normal {
+    @apply bg-gray-50 text-gray-600 ring-1 ring-inset ring-gray-200;
+  }
+  .btn-primary {
+    @apply bg-brand-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold
+           hover:bg-brand-700 active:bg-brand-800
+           shadow-sm hover:shadow transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-white text-gray-700 px-5 py-2.5 rounded-xl text-sm font-semibold
+           ring-1 ring-inset ring-gray-200
+           hover:bg-gray-50 active:bg-gray-100
+           shadow-sm transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .input-field {
+    @apply w-full rounded-xl border-0 ring-1 ring-inset ring-gray-200
+           bg-white px-4 py-2.5 text-sm text-gray-900
+           placeholder:text-gray-400
+           focus:ring-2 focus:ring-brand-500 focus:outline-none
+           transition-shadow duration-150;
+  }
+  .card {
+    @apply bg-white rounded-2xl ring-1 ring-gray-100 shadow-card;
+  }
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }

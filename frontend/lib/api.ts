@@ -114,6 +114,12 @@ export function triggerMatching(companyId: string) {
   });
 }
 
+export function generateEmbeddings() {
+  return fetchAPI<{ embedded: number }>('/api/v1/match/embeddings', {
+    method: 'POST',
+  });
+}
+
 export function getHealth() {
   return fetchAPI<{ status: string; database: string }>('/api/v1/health');
 }
