@@ -3,7 +3,7 @@ package matching
 import (
 	"math"
 
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/procura/internal/model"
 )
 
 const (

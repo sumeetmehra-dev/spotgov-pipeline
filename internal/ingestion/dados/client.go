@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/procura/internal/ingestion"
+	"github.com/sumeetmehra/procura/internal/model"
 	"go.uber.org/zap"
 )
 

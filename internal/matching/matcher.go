@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/embedding"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/procura/internal/embedding"
+	"github.com/sumeetmehra/procura/internal/model"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/procura/internal/model"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )

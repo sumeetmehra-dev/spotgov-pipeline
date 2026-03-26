@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/procura/internal/model"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"

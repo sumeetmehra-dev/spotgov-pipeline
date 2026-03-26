@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/procura/internal/model"
 )
 
 // mockSource implements Source for testing.

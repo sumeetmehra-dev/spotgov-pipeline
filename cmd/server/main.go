@@ -8,15 +8,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sumeetmehra/spotgov-pipeline/internal/config"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/database"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/embedding"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion/dados"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion/ted"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/matching"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/search"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/server"
+	"github.com/sumeetmehra/procura/internal/config"
+	"github.com/sumeetmehra/procura/internal/database"
+	"github.com/sumeetmehra/procura/internal/embedding"
+	"github.com/sumeetmehra/procura/internal/ingestion"
+	"github.com/sumeetmehra/procura/internal/ingestion/dados"
+	"github.com/sumeetmehra/procura/internal/ingestion/ted"
+	"github.com/sumeetmehra/procura/internal/matching"
+	"github.com/sumeetmehra/procura/internal/search"
+	"github.com/sumeetmehra/procura/internal/server"
 	"go.uber.org/zap"
 )
 
@@ -36,7 +36,7 @@ func main() {
 	}
 	defer logger.Sync()
 
-	logger.Info("starting spotgov-pipeline",
+	logger.Info("starting procura",
 		zap.String("env", cfg.Env),
 		zap.Int("port", cfg.Port),
 	)

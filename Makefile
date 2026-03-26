@@ -1,7 +1,7 @@
 .PHONY: dev run build test test-cover lint docker-up docker-down docker-build clean
 
 # Application
-APP_NAME=spotgov-pipeline
+APP_NAME=procura
 MAIN_PATH=./cmd/server
 
 dev:

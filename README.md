@@ -1,6 +1,8 @@
-# SpotGov Pipeline
+# Procura
 
-AI-powered procurement tender ingestion and matching platform. Ingests public tenders from the EU's TED database and Portugal's dados.gov.pt, indexes them with Elasticsearch (Portuguese + English analyzers), generates vector embeddings for semantic matching, and scores them against company profiles.
+European public procurement data is fragmented across dozens of national portals and the EU's TED database, each with its own schema, language, and query interface. Companies looking for relevant contracts either pay for aggregator subscriptions or spend hours manually scanning multiple sites. Most miss tenders they'd be qualified for because keyword search can't bridge the gap between how a company describes itself and how a buyer writes a contract notice.
+
+Procura pulls tenders from TED and Portugal's dados.gov.pt, normalizes them into a unified schema, indexes them with Elasticsearch (Portuguese + English analyzers), generates Mistral AI embeddings for semantic matching, and scores them against company profiles using a composite ranking that combines vector similarity, BM25 text relevance, CPV code overlap, and contract value fit.
 
 ## Quick Start
 
@@ -42,7 +44,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
 | `GET` | `/api/v1/stats` | Ingestion statistics |
 | `GET` | `/api/v1/tenders` | List tenders (paginated, filterable) |
 | `GET` | `/api/v1/tenders/:id` | Tender detail |
-| `GET` | `/api/v1/tenders/search` | Text search |
+| `GET` | `/api/v1/tenders/search` | Hybrid search (ES with DB fallback) |
 | `POST` | `/api/v1/tenders/ingest` | Trigger ingestion |
 | `POST` | `/api/v1/companies` | Create company profile |
 | `GET` | `/api/v1/companies/:id` | Get company |
@@ -71,7 +73,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
 | Search | Elasticsearch 8.x | BM25 scoring, Portuguese language analysis |
 | Embeddings | Mistral AI mistral-embed | 1024-dim vectors, free tier, no credit card |
 | Logging | Zap | Structured, zero-allocation, env-aware |
-| Frontend | Next.js 14 + Tailwind | Minimal, server-rendered dashboard |
+| Frontend | Next.js 14 + Tailwind | Modern dashboard with search, detail views, company matching |
 | Infra | Docker Compose | One-command development setup |
 
 ## Development

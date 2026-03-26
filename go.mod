@@ -1,4 +1,4 @@
-module github.com/sumeetmehra/spotgov-pipeline
+module github.com/sumeetmehra/procura
 
 go 1.25.0
 

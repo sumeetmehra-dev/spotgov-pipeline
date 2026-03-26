@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/procura/internal/model"
 )
 
 // Source defines the contract for any procurement data source.

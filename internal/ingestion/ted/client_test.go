@@ -201,6 +201,136 @@ func TestExtractI18nText(t *testing.T) {
 	}
 }
 
+func TestBuildDescription(t *testing.T) {
+	tests := []struct {
+		name    string
+		notice  Notice
+		title   string
+		want    string
+	}{
+		{
+			name: "prefers proc over lot labels",
+			notice: Notice{
+				DescriptionProc: I18nText{"por": "Aquisição de serviços de consultoria"},
+				DescriptionLot:  I18nTextArray{"por": {"Lote 1", "Lote 2", "Lote 3"}},
+			},
+			title: "Some title",
+			want:  "Aquisição de serviços de consultoria",
+		},
+		{
+			name: "filters out bare lot labels",
+			notice: Notice{
+				DescriptionLot: I18nTextArray{"por": {"Lote 1", "Lote 2", "Lote 3", "Lote 4", "Lote 5"}},
+			},
+			title: "Some title",
+			want:  "",
+		},
+		{
+			name: "keeps substantive lot descriptions",
+			notice: Notice{
+				DescriptionLot: I18nTextArray{"eng": {"Road construction in Lisbon municipality"}},
+			},
+			title: "Some title",
+			want:  "Road construction in Lisbon municipality",
+		},
+		{
+			name: "combines proc and substantive lot text",
+			notice: Notice{
+				DescriptionProc: I18nText{"por": "Fornecimento de equipamentos"},
+				DescriptionLot:  I18nTextArray{"por": {"Computadores portáteis e acessórios para escritório"}},
+			},
+			title: "Some title",
+			want:  "Fornecimento de equipamentos\n\nComputadores portáteis e acessórios para escritório",
+		},
+		{
+			name: "deduplicates against title",
+			notice: Notice{
+				DescriptionProc: I18nText{"por": "Construção de estrada"},
+				DescriptionLot:  I18nTextArray{"por": {"Details about road construction project"}},
+			},
+			title: "Construção de estrada",
+			want:  "Details about road construction project",
+		},
+		{
+			name: "falls back to proc if lot matches title",
+			notice: Notice{
+				DescriptionProc: I18nText{"por": "Real description here"},
+				DescriptionLot:  I18nTextArray{"por": {"Real description here"}},
+			},
+			title: "Some title",
+			want:  "Real description here",
+		},
+		{
+			name: "mixed lot labels and real descriptions",
+			notice: Notice{
+				DescriptionLot: I18nTextArray{"por": {"Lote 1", "Serviços de limpeza industrial e manutenção", "Lot 2"}},
+			},
+			title: "Some title",
+			want:  "Serviços de limpeza industrial e manutenção",
+		},
+		{
+			name: "filters lot labels with brand suffixes",
+			notice: Notice{
+				DescriptionLot: I18nTextArray{"por": {"Lote 1 - Trojan", "Lote 2 - Sulzer", "Lote 3 - KSB"}},
+			},
+			title: "Some title",
+			want:  "",
+		},
+		{
+			name: "both match title returns empty",
+			notice: Notice{
+				DescriptionProc: I18nText{"por": "Same as title"},
+				DescriptionLot:  I18nTextArray{"por": {"Same as title"}},
+			},
+			title: "Same as title",
+			want:  "",
+		},
+		{
+			name: "filters lote n.º pattern",
+			notice: Notice{
+				DescriptionLot: I18nTextArray{"por": {"Lote n.º 1", "Lote n.º 2", "Lote n.º 3"}},
+			},
+			title: "Some title",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildDescription(tt.notice, tt.title)
+			if got != tt.want {
+				t.Errorf("buildDescription() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFilterSubstantive(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []string
+		want  int
+	}{
+		{"all lot labels", []string{"Lote 1", "Lote 2", "Lote 3"}, 0},
+		{"mixed", []string{"Lote 1", "Road construction services", "Lot 2"}, 1},
+		{"all substantive", []string{"IT consulting services", "Software development"}, 2},
+		{"empty strings filtered", []string{"", "  ", "Lote 1"}, 0},
+		{"case insensitive", []string{"LOTE 1", "lote 2", "Lot 3"}, 0},
+		{"multilingual labels", []string{"Partie 1", "Los 2", "Partida 3"}, 0},
+		{"lot labels with brand names", []string{"Lote 1 - Trojan", "Lote 2 - Sulzer", "Lot 3 - KSB"}, 0},
+		{"lote n.º pattern", []string{"Lote n.º 1", "Lote nº 2", "Lote n 3"}, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := filterSubstantive(tt.input)
+			if len(got) != tt.want {
+				t.Errorf("filterSubstantive() returned %d entries, want %d: %v", len(got), tt.want, got)
+			}
+		})
+	}
+}
+
 func TestParseTEDDate(t *testing.T) {
 	tests := []struct {
 		name    string

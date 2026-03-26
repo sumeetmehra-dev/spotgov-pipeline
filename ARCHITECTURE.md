@@ -65,7 +65,9 @@ A Go service that pulls public procurement tenders from EU data sources, normali
 
 **Ingestion.** The orchestrator spins up a goroutine per data source via `errgroup`. TED and dados.gov.pt fetch concurrently. Both implement the `Source` interface (`Name()` + `Fetch()`), so adding a new source (BASE, OpenTender, whatever) doesn't touch the orchestrator at all.
 
-**Normalization.** Each source has its own normalizer that maps raw API responses into the shared `model.Tender` struct. The original JSON is kept in a `raw_data` JSONB column. I've needed this more than once for debugging normalizer bugs where the mapping was wrong but the original data was fine.
+**Normalization.** Each source has its own normalizer that maps raw API responses into the shared `model.Tender` struct. The original JSON is kept in a `raw_data` JSONB column — useful for debugging when the mapping is wrong but the original data is fine.
+
+The TED normalizer handles i18n text fields (preferring English, then Portuguese, then whatever's available) and has some fiddly logic around descriptions. TED has both `description-proc` (the overall procurement description) and `description-lot` (per-lot labels), and a lot of the lot descriptions are just "Lote 1" or similar noise. The normalizer prefers proc descriptions, filters out bare lot labels with regex, deduplicates against the title, and combines both fields when the lot description actually adds something the proc description doesn't say.
 
 **Storage.** Tenders get bulk-upserted with `ON CONFLICT (source_id)` for deduplication. Same batch gets indexed into Elasticsearch with both Portuguese and English text analyzers, since procurement notices on TED can be in either language (or both).
 
@@ -102,7 +104,7 @@ Three tables. `matches` is the join between tenders and companies, with the indi
 
 I went with GORM mainly for auto-migration. During early development the schema changed constantly, and maintaining separate migration files for a project that doesn't have a stable schema yet is busywork. The struct-tag-based model definitions mean the Go type *is* the schema, which keeps things in one place.
 
-I did consider raw `database/sql` with pgx. It would be faster, sure. But the queries here are simple: there are no complex joins, no CTEs, nothing where GORM's abstraction gets in the way. And `Clauses(OnConflict{})` gave me clean bulk upsert logic without hand-rolling the SQL. The custom Zap logger integration catches slow queries over 1s, which is enough observability without logging every `SELECT`.
+I did consider raw `database/sql` with pgx. It would be faster, sure. But the queries here are simple: there are no complex joins, no CTEs, nothing where GORM's abstraction gets in the way. And `Clauses(OnConflict{})` gave me clean bulk upsert logic without hand-rolling the SQL. The custom Zap logger integration catches slow queries over 1s, which is enough observability without logging every `SELECT`. GORM is confined to the repository layer — handlers and business logic work with plain Go structs — so if raw pgx ever becomes necessary for performance, the swap happens in one package without touching a single handler.
 
 ### Chi over Gin/Echo
 
@@ -149,6 +151,18 @@ Four signals, weighted by how much I trust each one. Vector similarity gets the 
 
 The weights are configurable. A learned-to-rank model would be the right long-term answer, but there's no training data yet. This gets the product to a testable state where you can actually see if the matching makes sense, then collect feedback to train something better.
 
+**Worked example.** A construction company with CPV codes `[45000000, 45210000]` and a preferred contract range of €100K–€500K. A tender titled *"Serviços de manutenção de edifícios — Lisboa"* (CPV `50700000`, value €280K) scores:
+
+| Signal | Value | Score |
+|--------|-------|-------|
+| Vector similarity | 0.91 cosine | 0.91 |
+| BM25 | index-relative | 0.74 |
+| CPV Jaccard | shares division, not group | 0.50 |
+| Value fit | €280K within range | 0.88 |
+| **Composite** | | **0.79** |
+
+CPV scores lower because `50700000` (maintenance) and `45000000` (construction) share a division but not a group — intentional. The tender surfaces as relevant but not a perfect match.
+
 ### Reciprocal Rank Fusion for hybrid search
 
 ```
@@ -165,9 +179,9 @@ Both would work here. I went with Zap because its `Named()` sub-loggers make it 
 
 ### Next.js for the frontend
 
-The frontend is deliberately minimal. A tender search page, a detail view, a company profile page. That's it. I chose Next.js 14 with the App Router over a Vite + React SPA because server-side rendering makes the initial load fast without needing a loading skeleton state for every page. For a dashboard that's mostly displaying server data, SSR is the simpler model — fetch in the server component, render, done. No client-side state management, no loading spinners, no hydration mismatches to debug.
+I chose Next.js 14 with the App Router over a Vite + React SPA. The routing conventions map cleanly to the three views I needed (dashboard, tender detail, company profile), and server-rendering the initial page load means no loading skeleton before you see actual data. For a dashboard that's mostly displaying server-side results, SSR is the simpler model.
 
-This is a backend-heavy project and the frontend reflects that. I spent my time on the ingestion pipeline and matching engine rather than building a polished UI. The frontend exists to make the backend's output visible, not to be the thing being evaluated.
+The UI is Tailwind. I spent some time on the match results page specifically — each match shows a score breakdown (vector, BM25, CPV, value fit) so you can see *why* a tender ranked where it did, not just that it did. Tenders show deadline urgency and source badges (TED vs dados) since those matter for prioritization. All API calls are client-side (`'use client'` components), so the frontend could sit on Vercel while the backend runs elsewhere. That said, this is a backend-heavy project and the frontend reflects that. I put my time into the pipeline and matching engine.
 
 ## Concurrency Model
 
@@ -204,3 +218,5 @@ The general principle: partial success is better than total failure. If one thin
 **Async indexing.** DB upsert, ES indexing, and embedding generation all happen synchronously right now. Decoupling them with a message queue (Kafka or NATS) would speed up the ingestion path and let each downstream step retry independently. This matters most when Mistral rate-limits you halfway through a large batch.
 
 **Notifications.** The whole point of matching is telling a company when something relevant shows up. Polling a dashboard doesn't cut it. A webhook that fires when a match crosses a score threshold is the obvious next step.
+
+**Multi-tenancy.** Right now the system is single-tenant — one tender pool, one match table, no access boundaries. Production would scope company profiles, match history, and ingestion filters to isolated tenants with row-level security in Postgres. The data model supports this with a `tenant_id` column on the `companies` and `matches` tables; the API layer doesn't enforce it yet.

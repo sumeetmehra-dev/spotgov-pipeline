@@ -2,22 +2,23 @@ package ted
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/procura/internal/model"
 	"gorm.io/datatypes"
 )
+
+// Matches lot labels like "Lote 1", "Lot 2 - BrandName", "Lote n.º 3", "LOTE 1 - Trojan"
+var lotLabelPattern = regexp.MustCompile(`(?i)^(lote|lot|partie|los|partida)\s+(n\.?º?\s*)?\d+(\s*[-–:].+)?$`)
 
 // Normalize converts a TED v3 Notice into a unified Tender model.
 func Normalize(n Notice) model.Tender {
 	title := extractI18nText(n.TitleProc)
-	description := extractI18nTextArrayJoined(n.DescriptionLot)
-	if description == "" {
-		description = extractI18nText(n.DescriptionProc)
-	}
+	description := buildDescription(n, title)
 
 	tender := model.Tender{
 		Source:            "ted",
@@ -47,6 +48,78 @@ func Normalize(n Notice) model.Tender {
 	}
 
 	return tender
+}
+
+// buildDescription extracts the best description from TED notice fields.
+// Prefers description-proc (overall procurement description) over description-lot (per-lot labels).
+// Filters out lot labels like "Lote 1", "Lote 2" that aren't real descriptions.
+// Deduplicates against the title to avoid showing the same text twice.
+func buildDescription(n Notice, title string) string {
+	procDesc := extractI18nText(n.DescriptionProc)
+	lotDesc := extractSubstantiveLotText(n.DescriptionLot)
+
+	// Prefer proc-level description (usually richer).
+	if procDesc != "" && !strings.EqualFold(procDesc, title) {
+		if lotDesc != "" && lotDesc != procDesc {
+			return procDesc + "\n\n" + lotDesc
+		}
+		return procDesc
+	}
+
+	// Fall back to lot descriptions.
+	if lotDesc != "" && !strings.EqualFold(lotDesc, title) {
+		return lotDesc
+	}
+
+	// Last resort: return whichever is non-empty.
+	// If both match the title, return empty — duplicating the title adds no value.
+	if procDesc != "" && !strings.EqualFold(procDesc, title) {
+		return procDesc
+	}
+	if lotDesc != "" && !strings.EqualFold(lotDesc, title) {
+		return lotDesc
+	}
+	return ""
+}
+
+// extractSubstantiveLotText joins lot descriptions after filtering out bare lot labels.
+func extractSubstantiveLotText(m I18nTextArray) string {
+	if m == nil {
+		return ""
+	}
+	for _, lang := range []string{"eng", "por", "mul"} {
+		if arr, ok := m[lang]; ok && len(arr) > 0 {
+			filtered := filterSubstantive(arr)
+			if len(filtered) > 0 {
+				return strings.Join(filtered, "\n")
+			}
+		}
+	}
+	for _, arr := range m {
+		if len(arr) > 0 {
+			filtered := filterSubstantive(arr)
+			if len(filtered) > 0 {
+				return strings.Join(filtered, "\n")
+			}
+		}
+	}
+	return ""
+}
+
+// filterSubstantive removes entries that are just lot labels (e.g. "Lote 1") or too short to be useful.
+func filterSubstantive(entries []string) []string {
+	var result []string
+	for _, s := range entries {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if lotLabelPattern.MatchString(s) {
+			continue
+		}
+		result = append(result, s)
+	}
+	return result
 }
 
 // extractI18nText returns text preferring English, then Portuguese, then any language.

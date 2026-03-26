@@ -3,10 +3,10 @@ package server
 import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/handler"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/matching"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/search"
+	"github.com/sumeetmehra/procura/internal/handler"
+	"github.com/sumeetmehra/procura/internal/ingestion"
+	"github.com/sumeetmehra/procura/internal/matching"
+	"github.com/sumeetmehra/procura/internal/search"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )

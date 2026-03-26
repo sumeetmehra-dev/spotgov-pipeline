@@ -8,7 +8,7 @@ services:
     environment:
       - PORT=8080
       - ENV=dev
-      - DATABASE_URL=postgres://spotgov:spotgov_pass@postgres:5432/spotgov?sslmode=disable
+      - DATABASE_URL=postgres://procura:procura_pass@postgres:5432/procura?sslmode=disable
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - MISTRAL_API_KEY=${MISTRAL_API_KEY}
       - TED_BASE_URL=https://api.ted.europa.eu
@@ -23,15 +23,15 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: spotgov
-      POSTGRES_USER: spotgov
-      POSTGRES_PASSWORD: spotgov_pass
+      POSTGRES_DB: procura
+      POSTGRES_USER: procura
+      POSTGRES_PASSWORD: procura_pass
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U spotgov -d spotgov"]
+      test: ["CMD-SHELL", "pg_isready -U procura -d procura"]
       interval: 5s
       timeout: 5s
       retries: 5

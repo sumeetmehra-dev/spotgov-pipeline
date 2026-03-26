@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
-	"github.com/sumeetmehra/spotgov-pipeline/internal/search"
+	"github.com/sumeetmehra/procura/internal/ingestion"
+	"github.com/sumeetmehra/procura/internal/model"
+	"github.com/sumeetmehra/procura/internal/search"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )

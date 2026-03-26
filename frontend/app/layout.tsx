@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'SpotGov Pipeline',
+  title: 'Procura',
   description: 'AI-powered procurement tender matching platform',
 };
 
@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </svg>
                 </div>
                 <span className="text-lg font-bold text-white tracking-tight">
-                  SpotGov<span className="text-brand-400"> Pipeline</span>
+                  Procura
                 </span>
               </a>
               <div className="flex items-center gap-1">
