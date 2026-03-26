@@ -6,11 +6,12 @@ import (
 	"github.com/sumeetmehra/spotgov-pipeline/internal/handler"
 	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion"
 	"github.com/sumeetmehra/spotgov-pipeline/internal/matching"
+	"github.com/sumeetmehra/spotgov-pipeline/internal/search"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
-func NewRouter(db *gorm.DB, orchestrator *ingestion.Orchestrator, matcher *matching.Matcher, logger *zap.Logger) *chi.Mux {
+func NewRouter(db *gorm.DB, orchestrator *ingestion.Orchestrator, matcher *matching.Matcher, es *search.ESClient, logger *zap.Logger) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -21,7 +22,7 @@ func NewRouter(db *gorm.DB, orchestrator *ingestion.Orchestrator, matcher *match
 	r.Use(middleware.RealIP)
 
 	health := handler.NewHealthHandler(db)
-	tenders := handler.NewTenderHandler(db, orchestrator, logger)
+	tenders := handler.NewTenderHandler(db, orchestrator, es, logger)
 	companies := handler.NewCompanyHandler(db, logger)
 	matches := handler.NewMatchHandler(matcher, logger)
 

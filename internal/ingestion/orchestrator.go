@@ -13,17 +13,24 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// TenderIndexer is an optional interface for indexing tenders after DB upsert.
+type TenderIndexer interface {
+	BulkIndex(ctx context.Context, tenders []model.Tender) (int, error)
+}
+
 // Orchestrator manages concurrent ingestion from multiple procurement sources.
 type Orchestrator struct {
 	sources []Source
 	db      *gorm.DB
+	indexer TenderIndexer
 	logger  *zap.Logger
 }
 
-func NewOrchestrator(db *gorm.DB, logger *zap.Logger, sources ...Source) *Orchestrator {
+func NewOrchestrator(db *gorm.DB, logger *zap.Logger, indexer TenderIndexer, sources ...Source) *Orchestrator {
 	return &Orchestrator{
 		sources: sources,
 		db:      db,
+		indexer: indexer,
 		logger:  logger.Named("orchestrator"),
 	}
 }
@@ -74,10 +81,31 @@ func (o *Orchestrator) Run(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
+	// Deduplicate by source_id before upserting — the same notice
+	// can appear multiple times in API results (e.g. multiple lots).
+	allTenders = dedup(allTenders)
+
 	// Bulk upsert: insert or update on source_id conflict
 	inserted, err := o.upsertTenders(allTenders)
 	if err != nil {
 		return 0, fmt.Errorf("upsert tenders: %w", err)
+	}
+
+	// Index into Elasticsearch if available.
+	if o.indexer != nil {
+		// Re-fetch from DB to get UUIDs assigned by Postgres.
+		var dbTenders []model.Tender
+		sourceIDs := make([]string, len(allTenders))
+		for i, t := range allTenders {
+			sourceIDs[i] = t.SourceID
+		}
+		o.db.Where("source_id IN ?", sourceIDs).Find(&dbTenders)
+
+		if indexed, err := o.indexer.BulkIndex(ctx, dbTenders); err != nil {
+			o.logger.Error("ES indexing failed", zap.Error(err))
+		} else {
+			o.logger.Info("indexed tenders in ES", zap.Int("count", indexed))
+		}
 	}
 
 	o.logger.Info("ingestion complete",
@@ -86,6 +114,20 @@ func (o *Orchestrator) Run(ctx context.Context) (int, error) {
 	)
 
 	return inserted, nil
+}
+
+// dedup removes tenders with duplicate source_id, keeping the first occurrence.
+func dedup(tenders []model.Tender) []model.Tender {
+	seen := make(map[string]struct{}, len(tenders))
+	out := make([]model.Tender, 0, len(tenders))
+	for _, t := range tenders {
+		if _, ok := seen[t.SourceID]; ok {
+			continue
+		}
+		seen[t.SourceID] = struct{}{}
+		out = append(out, t)
+	}
+	return out
 }
 
 func (o *Orchestrator) upsertTenders(tenders []model.Tender) (int, error) {

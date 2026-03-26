@@ -51,9 +51,8 @@ func (c *Client) EmbedTexts(ctx context.Context, texts []string) ([]Vector, erro
 	}
 
 	reqBody := embeddingRequest{
-		Input:      texts,
-		Model:      c.model,
-		Dimensions: c.dimensions,
+		Input: texts,
+		Model: c.model,
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -113,9 +112,8 @@ func (c *Client) EmbedText(ctx context.Context, text string) (Vector, error) {
 }
 
 type embeddingRequest struct {
-	Input      []string `json:"input"`
-	Model      string   `json:"model"`
-	Dimensions int      `json:"dimensions,omitempty"`
+	Input []string `json:"input"`
+	Model string   `json:"model"`
 }
 
 type embeddingResponse struct {

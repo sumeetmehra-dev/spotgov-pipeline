@@ -20,7 +20,24 @@ const (
 	requestTimeout = 30 * time.Second
 )
 
-// Client communicates with the TED Search API.
+// responseFields are the TED v3 fields we request in every search.
+var responseFields = []string{
+	"publication-number",
+	"notice-type",
+	"publication-date",
+	"title-proc",
+	"description-lot",
+	"description-proc",
+	"organisation-name-buyer",
+	"organisation-country-buyer",
+	"estimated-value-lot",
+	"estimated-value-cur-lot",
+	"deadline-receipt-tender-date-lot",
+	"classification-cpv",
+	"contract-nature",
+}
+
+// Client communicates with the TED Search API v3.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
@@ -50,13 +67,19 @@ func (c *Client) Fetch(ctx context.Context, since time.Time) ([]model.Tender, er
 	page := 1
 
 	sinceStr := since.Format("20060102")
-	query := fmt.Sprintf("TD=[cn-standard] AND RC=[PT] AND PD>=%s", sinceStr)
+	query := fmt.Sprintf(
+		"buyer-country = PRT AND notice-type = cn-standard AND publication-date >= %s SORT BY publication-date DESC",
+		sinceStr,
+	)
 
 	for {
 		req := SearchRequest{
-			Query: query,
-			Limit: maxPerPage,
-			Page:  page,
+			Query:          query,
+			Fields:         responseFields,
+			Limit:          maxPerPage,
+			Page:           page,
+			PaginationMode: "PAGE_NUMBER",
+			Scope:          "ACTIVE",
 		}
 
 		resp, err := c.search(ctx, req)
@@ -67,7 +90,7 @@ func (c *Client) Fetch(ctx context.Context, since time.Time) ([]model.Tender, er
 		c.logger.Info("fetched TED notices",
 			zap.Int("page", page),
 			zap.Int("count", len(resp.Notices)),
-			zap.Int("total", resp.Total),
+			zap.Int("total", resp.TotalNoticeCount),
 		)
 
 		for _, notice := range resp.Notices {
@@ -75,12 +98,14 @@ func (c *Client) Fetch(ctx context.Context, since time.Time) ([]model.Tender, er
 			allTenders = append(allTenders, tender)
 		}
 
-		if page >= resp.Pages || len(resp.Notices) == 0 {
+		// Stop when we've fetched all pages or got empty results.
+		totalPages := (resp.TotalNoticeCount + maxPerPage - 1) / maxPerPage
+		if page >= totalPages || len(resp.Notices) == 0 {
 			break
 		}
 		page++
 
-		// Rate limiting: avoid hammering the API
+		// Rate limiting: avoid hammering the API.
 		select {
 		case <-ctx.Done():
 			return allTenders, ctx.Err()

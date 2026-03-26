@@ -15,6 +15,7 @@ import (
 	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion/dados"
 	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion/ted"
 	"github.com/sumeetmehra/spotgov-pipeline/internal/matching"
+	"github.com/sumeetmehra/spotgov-pipeline/internal/search"
 	"github.com/sumeetmehra/spotgov-pipeline/internal/server"
 	"go.uber.org/zap"
 )
@@ -51,10 +52,23 @@ func main() {
 		logger.Fatal("migration failed", zap.Error(err))
 	}
 
+	// Initialize Elasticsearch
+	var esClient *search.ESClient
+	var indexer *search.Indexer
+	esClient, err = search.NewESClient(cfg.ElasticsearchURL, logger)
+	if err != nil {
+		logger.Warn("Elasticsearch unavailable, search will use DB fallback", zap.Error(err))
+	} else {
+		if err := esClient.CreateIndex(context.Background()); err != nil {
+			logger.Error("failed to create ES index", zap.Error(err))
+		}
+		indexer = search.NewIndexer(esClient, logger)
+	}
+
 	// Initialize data sources
 	tedClient := ted.NewClient(cfg.TEDBaseURL, logger)
 	dadosClient := dados.NewClient(cfg.DadosBaseURL, logger)
-	orchestrator := ingestion.NewOrchestrator(db, logger, tedClient, dadosClient)
+	orchestrator := ingestion.NewOrchestrator(db, logger, indexer, tedClient, dadosClient)
 
 	// Initialize embedding client (optional — degrades gracefully if no API key)
 	var matcher *matching.Matcher
@@ -68,7 +82,7 @@ func main() {
 	}
 
 	// Build router
-	r := server.NewRouter(db, orchestrator, matcher, logger)
+	r := server.NewRouter(db, orchestrator, matcher, esClient, logger)
 
 	// Start HTTP server with graceful shutdown
 	srv := &http.Server{

@@ -1,38 +1,53 @@
 package ted
 
-// SearchRequest represents the TED API search request body.
+// SearchRequest represents the TED API v3 search request body.
 type SearchRequest struct {
-	Query string `json:"query"`
-	// Fields to return in results. If empty, returns all fields.
-	Fields []string `json:"fields,omitempty"`
-	// Maximum results per page (max 250).
-	Limit int `json:"limit,omitempty"`
-	// Pagination token from previous response.
-	Page int `json:"page,omitempty"`
+	Query              string   `json:"query"`
+	Fields             []string `json:"fields"`
+	Limit              int      `json:"limit,omitempty"`
+	Page               int      `json:"page,omitempty"`
+	Scope              string   `json:"scope,omitempty"`
+	PaginationMode     string   `json:"paginationMode,omitempty"`
+	OnlyLatestVersions bool     `json:"onlyLatestVersions,omitempty"`
 }
 
-// SearchResponse is the top-level TED API search response.
+// SearchResponse is the top-level TED API v3 search response.
 type SearchResponse struct {
-	Notices []Notice `json:"notices"`
-	Total   int      `json:"total"`
-	Page    int      `json:"page"`
-	Pages   int      `json:"pages"`
+	Notices            []Notice `json:"notices"`
+	TotalNoticeCount   int      `json:"totalNoticeCount"`
+	IterationNextToken *string  `json:"iterationNextToken"`
+	TimedOut           bool     `json:"timedOut"`
 }
 
-// Notice represents a single TED procurement notice.
+// I18nText maps ISO 639-2 language codes to text values.
+// Example: {"por": "Construção de estrada", "eng": "Road construction"}
+type I18nText map[string]string
+
+// I18nTextArray maps ISO 639-2 language codes to arrays of text values (one per lot).
+// Example: {"por": ["Lot 1 description", "Lot 2 description"]}
+type I18nTextArray map[string][]string
+
+// NoticeLinks contains URLs to different representations of the notice.
+type NoticeLinks struct {
+	XML  map[string]string `json:"xml"`
+	HTML map[string]string `json:"html"`
+}
+
+// Notice represents a single TED procurement notice from the v3 API.
+// Text fields use i18n maps; value fields use string arrays (one per lot).
 type Notice struct {
-	PublicationNumber  string   `json:"publication-number"`
-	Title              string   `json:"title"`
-	Description        string   `json:"description"`
-	CPVCodes           []string `json:"cpv-codes"`
-	BuyerName          string   `json:"buyer-name"`
-	BuyerCountry       string   `json:"buyer-country"`
-	PlaceOfPerformance string   `json:"place-of-performance"`
-	ProcurementMethod  string   `json:"procurement-method"`
-	EstimatedValue     *float64 `json:"estimated-value"`
-	Currency           string   `json:"currency"`
-	Deadline           string   `json:"deadline"`
-	PublicationDate    string   `json:"publication-date"`
-	NoticeType         string   `json:"notice-type"`
-	NoticeURL          string   `json:"notice-url"`
+	PublicationNumber string       `json:"publication-number"`
+	NoticeType        string       `json:"notice-type"`
+	PublicationDate   string       `json:"publication-date"`
+	TitleProc         I18nText     `json:"title-proc"`
+	DescriptionLot    I18nTextArray `json:"description-lot"`
+	DescriptionProc   I18nText     `json:"description-proc"`
+	OrgNameBuyer      I18nTextArray `json:"organisation-name-buyer"`
+	OrgCountryBuyer   []string     `json:"organisation-country-buyer"`
+	EstimatedValueLot []string     `json:"estimated-value-lot"`
+	EstimatedValueCur []string     `json:"estimated-value-cur-lot"`
+	DeadlineDateLot   []string     `json:"deadline-receipt-tender-date-lot"`
+	CPVCodes          []string     `json:"classification-cpv"`
+	ContractNature    []string     `json:"contract-nature"`
+	Links             NoticeLinks  `json:"links"`
 }

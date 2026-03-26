@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sumeetmehra/spotgov-pipeline/internal/ingestion"
 	"github.com/sumeetmehra/spotgov-pipeline/internal/model"
+	"github.com/sumeetmehra/spotgov-pipeline/internal/search"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -18,13 +19,15 @@ import (
 type TenderHandler struct {
 	db           *gorm.DB
 	orchestrator *ingestion.Orchestrator
+	es           *search.ESClient
 	logger       *zap.Logger
 }
 
-func NewTenderHandler(db *gorm.DB, orchestrator *ingestion.Orchestrator, logger *zap.Logger) *TenderHandler {
+func NewTenderHandler(db *gorm.DB, orchestrator *ingestion.Orchestrator, es *search.ESClient, logger *zap.Logger) *TenderHandler {
 	return &TenderHandler{
 		db:           db,
 		orchestrator: orchestrator,
+		es:           es,
 		logger:       logger.Named("handler.tender"),
 	}
 }
@@ -110,7 +113,7 @@ func (h *TenderHandler) Get(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, tender)
 }
 
-// Search performs text search on tenders (basic ILIKE, upgraded to ES in Phase 3).
+// Search performs full-text search on tenders using Elasticsearch with DB fallback.
 func (h *TenderHandler) Search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if q == "" {
@@ -123,6 +126,27 @@ func (h *TenderHandler) Search(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
+	// Try Elasticsearch first.
+	if h.es != nil {
+		filters := search.SearchFilters{
+			CPVCode: r.URL.Query().Get("cpv"),
+			Country: r.URL.Query().Get("country"),
+		}
+		results, err := h.es.Search(r.Context(), q, filters, limit)
+		if err != nil {
+			h.logger.Warn("ES search failed, falling back to DB", zap.Error(err))
+		} else {
+			respondJSON(w, http.StatusOK, map[string]interface{}{
+				"data":   results,
+				"query":  q,
+				"count":  len(results),
+				"engine": "elasticsearch",
+			})
+			return
+		}
+	}
+
+	// Fallback: DB ILIKE search.
 	var tenders []model.Tender
 	h.db.Where("title ILIKE ? OR description ILIKE ?", "%"+q+"%", "%"+q+"%").
 		Order("publication_date DESC NULLS LAST").
@@ -130,9 +154,10 @@ func (h *TenderHandler) Search(w http.ResponseWriter, r *http.Request) {
 		Find(&tenders)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"data":  tenders,
-		"query": q,
-		"count": len(tenders),
+		"data":   tenders,
+		"query":  q,
+		"count":  len(tenders),
+		"engine": "database",
 	})
 }
 

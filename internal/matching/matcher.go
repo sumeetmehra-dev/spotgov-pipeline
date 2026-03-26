@@ -112,27 +112,44 @@ func (m *Matcher) GenerateTenderEmbeddings(ctx context.Context, batchSize int) (
 		return 0, nil
 	}
 
-	texts := make([]string, len(tenders))
-	for i, t := range tenders {
-		texts[i] = buildTenderText(t)
-	}
+	// Embed in small batches to stay within Mistral API limits.
+	const embedBatchSize = 10
+	total := 0
 
-	vectors, err := m.embedCl.EmbedTexts(ctx, texts)
-	if err != nil {
-		return 0, fmt.Errorf("generate embeddings: %w", err)
-	}
+	for i := 0; i < len(tenders); i += embedBatchSize {
+		end := i + embedBatchSize
+		if end > len(tenders) {
+			end = len(tenders)
+		}
+		batch := tenders[i:end]
 
-	for i, vec := range vectors {
-		if err := m.store.StoreTenderEmbedding(ctx, tenders[i].ID, vec); err != nil {
-			m.logger.Error("failed to store embedding",
-				zap.String("tender_id", tenders[i].ID.String()),
+		texts := make([]string, len(batch))
+		for j, t := range batch {
+			texts[j] = buildTenderText(t)
+		}
+
+		vectors, err := m.embedCl.EmbedTexts(ctx, texts)
+		if err != nil {
+			m.logger.Error("batch embedding failed, skipping batch",
+				zap.Int("batch_start", i),
 				zap.Error(err),
 			)
+			continue
 		}
+
+		for j, vec := range vectors {
+			if err := m.store.StoreTenderEmbedding(ctx, batch[j].ID, vec); err != nil {
+				m.logger.Error("failed to store embedding",
+					zap.String("tender_id", batch[j].ID.String()),
+					zap.Error(err),
+				)
+			}
+		}
+		total += len(vectors)
 	}
 
-	m.logger.Info("generated tender embeddings", zap.Int("count", len(vectors)))
-	return len(vectors), nil
+	m.logger.Info("generated tender embeddings", zap.Int("count", total))
+	return total, nil
 }
 
 func buildCompanyText(c model.Company) string {
@@ -149,6 +166,8 @@ func buildCompanyText(c model.Company) string {
 	return strings.Join(parts, ". ")
 }
 
+const maxTextLen = 2000 // Mistral token limit safety margin
+
 func buildTenderText(t model.Tender) string {
 	parts := []string{t.Title}
 	if t.Description != "" {
@@ -160,5 +179,9 @@ func buildTenderText(t model.Tender) string {
 	if len(t.CPVCodes) > 0 {
 		parts = append(parts, "CPV: "+strings.Join(t.CPVCodes, ", "))
 	}
-	return strings.Join(parts, ". ")
+	text := strings.Join(parts, ". ")
+	if len(text) > maxTextLen {
+		text = text[:maxTextLen]
+	}
+	return text
 }

@@ -24,21 +24,23 @@ func TestClient_Search(t *testing.T) {
 			response: SearchResponse{
 				Notices: []Notice{
 					{
-						PublicationNumber: "2024/S 001-000001",
-						Title:            "Construction of highway bridge",
-						BuyerCountry:     "PT",
-						CPVCodes:         []string{"45000000"},
+						PublicationNumber: "136388-2025",
+						NoticeType:        "cn-standard",
+						PublicationDate:   "2025-03-03+01:00",
+						TitleProc:         I18nText{"por": "Construção de ponte rodoviária"},
+						OrgCountryBuyer:   []string{"PRT"},
+						CPVCodes:          []string{"45000000"},
 					},
 					{
-						PublicationNumber: "2024/S 001-000002",
-						Title:            "IT consulting services",
-						BuyerCountry:     "PT",
-						CPVCodes:         []string{"72000000"},
+						PublicationNumber: "136389-2025",
+						NoticeType:        "cn-standard",
+						PublicationDate:   "2025-03-03+01:00",
+						TitleProc:         I18nText{"eng": "IT consulting services"},
+						OrgCountryBuyer:   []string{"PRT"},
+						CPVCodes:          []string{"72000000"},
 					},
 				},
-				Total: 2,
-				Pages: 1,
-				Page:  1,
+				TotalNoticeCount: 2,
 			},
 			statusCode: http.StatusOK,
 			wantCount:  2,
@@ -46,7 +48,7 @@ func TestClient_Search(t *testing.T) {
 		},
 		{
 			name:       "empty results",
-			response:   SearchResponse{Notices: []Notice{}, Total: 0, Pages: 0, Page: 1},
+			response:   SearchResponse{Notices: []Notice{}, TotalNoticeCount: 0},
 			statusCode: http.StatusOK,
 			wantCount:  0,
 			wantErr:    false,
@@ -92,21 +94,24 @@ func TestClient_Search(t *testing.T) {
 }
 
 func TestNormalize(t *testing.T) {
-	value := 1500000.0
 	notice := Notice{
-		PublicationNumber:  "2024/S 050-123456",
-		Title:              "Construction of municipal road",
-		Description:        "Road construction in Lisbon municipality",
-		CPVCodes:           []string{"45233120", "45233140"},
-		BuyerName:          "Câmara Municipal de Lisboa",
-		BuyerCountry:       "PT",
-		PlaceOfPerformance: "Lisbon, Portugal",
-		ProcurementMethod:  "open",
-		EstimatedValue:     &value,
-		Currency:           "EUR",
-		Deadline:           "2024-06-15",
-		PublicationDate:    "2024-03-01",
-		NoticeURL:          "https://ted.europa.eu/udl?uri=TED:NOTICE:123456-2024:TEXT:EN:HTML",
+		PublicationNumber: "136388-2025",
+		NoticeType:        "cn-standard",
+		PublicationDate:   "2025-03-03+01:00",
+		TitleProc:         I18nText{"por": "Construção de estrada municipal", "eng": "Construction of municipal road"},
+		DescriptionLot:    I18nTextArray{"eng": {"Road construction in Lisbon municipality"}},
+		OrgNameBuyer:      I18nTextArray{"por": {"Câmara Municipal de Lisboa"}},
+		OrgCountryBuyer:   []string{"PRT"},
+		EstimatedValueLot: []string{"1500000"},
+		EstimatedValueCur: []string{"EUR"},
+		DeadlineDateLot:   []string{"2025-06-15Z"},
+		CPVCodes:          []string{"45233120", "45233140"},
+		ContractNature:    []string{"works"},
+		Links: NoticeLinks{
+			HTML: map[string]string{
+				"ENG": "https://ted.europa.eu/en/notice/-/detail/136388-2025",
+			},
+		},
 	}
 
 	tender := Normalize(notice)
@@ -114,14 +119,24 @@ func TestNormalize(t *testing.T) {
 	if tender.Source != "ted" {
 		t.Errorf("expected source 'ted', got %q", tender.Source)
 	}
-	if tender.SourceID != notice.PublicationNumber {
-		t.Errorf("expected source_id %q, got %q", notice.PublicationNumber, tender.SourceID)
+	if tender.SourceID != "136388-2025" {
+		t.Errorf("expected source_id '136388-2025', got %q", tender.SourceID)
 	}
-	if tender.Title != notice.Title {
-		t.Errorf("expected title %q, got %q", notice.Title, tender.Title)
+	// Should prefer English title.
+	if tender.Title != "Construction of municipal road" {
+		t.Errorf("expected English title, got %q", tender.Title)
+	}
+	if tender.Description != "Road construction in Lisbon municipality" {
+		t.Errorf("expected description, got %q", tender.Description)
 	}
 	if len(tender.CPVCodes) != 2 {
 		t.Errorf("expected 2 CPV codes, got %d", len(tender.CPVCodes))
+	}
+	if tender.BuyerName != "Câmara Municipal de Lisboa" {
+		t.Errorf("expected buyer name, got %q", tender.BuyerName)
+	}
+	if tender.BuyerCountry != "PRT" {
+		t.Errorf("expected country PRT, got %q", tender.BuyerCountry)
 	}
 	if tender.Deadline == nil {
 		t.Error("expected deadline to be parsed")
@@ -129,24 +144,27 @@ func TestNormalize(t *testing.T) {
 	if tender.PublicationDate == nil {
 		t.Error("expected publication_date to be parsed")
 	}
-	if *tender.EstimatedValue != value {
-		t.Errorf("expected value %f, got %f", value, *tender.EstimatedValue)
+	if tender.EstimatedValue == nil || *tender.EstimatedValue != 1500000 {
+		t.Errorf("expected value 1500000, got %v", tender.EstimatedValue)
 	}
 	if tender.Currency != "EUR" {
 		t.Errorf("expected currency EUR, got %q", tender.Currency)
+	}
+	if tender.NoticeURL != "https://ted.europa.eu/en/notice/-/detail/136388-2025" {
+		t.Errorf("expected notice URL, got %q", tender.NoticeURL)
 	}
 }
 
 func TestNormalize_MissingFields(t *testing.T) {
 	notice := Notice{
-		PublicationNumber: "2024/S 001-000001",
-		Title:             "Minimal notice",
+		PublicationNumber: "999999-2025",
+		TitleProc:         I18nText{"por": "Aviso mínimo"},
 	}
 
 	tender := Normalize(notice)
 
-	if tender.SourceID != notice.PublicationNumber {
-		t.Errorf("expected source_id %q, got %q", notice.PublicationNumber, tender.SourceID)
+	if tender.SourceID != "999999-2025" {
+		t.Errorf("expected source_id '999999-2025', got %q", tender.SourceID)
 	}
 	if tender.Currency != "EUR" {
 		t.Errorf("expected default currency EUR, got %q", tender.Currency)
@@ -156,5 +174,52 @@ func TestNormalize_MissingFields(t *testing.T) {
 	}
 	if tender.EstimatedValue != nil {
 		t.Error("expected nil estimated value")
+	}
+	if tender.NoticeURL == "" {
+		t.Error("expected fallback notice URL")
+	}
+}
+
+func TestExtractI18nText(t *testing.T) {
+	tests := []struct {
+		name string
+		m    I18nText
+		want string
+	}{
+		{"nil map", nil, ""},
+		{"english preferred", I18nText{"por": "PT text", "eng": "EN text"}, "EN text"},
+		{"portuguese fallback", I18nText{"por": "PT text", "fra": "FR text"}, "PT text"},
+		{"any language fallback", I18nText{"deu": "DE text"}, "DE text"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractI18nText(tt.m)
+			if got != tt.want {
+				t.Errorf("extractI18nText() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseTEDDate(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantNil bool
+	}{
+		{"empty", "", true},
+		{"with timezone offset", "2025-03-03+01:00", false},
+		{"with Z suffix", "2025-04-23Z", false},
+		{"plain date", "2025-03-03", false},
+		{"compact date", "20250303", false},
+		{"invalid", "not-a-date", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseTEDDate(tt.input)
+			if (result == nil) != tt.wantNil {
+				t.Errorf("parseTEDDate(%q) nil=%v, wantNil=%v", tt.input, result == nil, tt.wantNil)
+			}
+		})
 	}
 }
