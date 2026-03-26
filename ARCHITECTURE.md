@@ -1,6 +1,6 @@
 # Architecture
 
-SpotGov Pipeline is a Go service that ingests public procurement tenders from European data sources, normalizes them into a unified schema, enables full-text and semantic search, and matches tenders against company profiles using a hybrid scoring algorithm.
+A Go service that pulls public procurement tenders from EU data sources, normalizes them, indexes them for full-text and semantic search, and ranks them against company profiles. The short version: tenders go in, scored matches come out.
 
 ## System Overview
 
@@ -63,15 +63,15 @@ SpotGov Pipeline is a Go service that ingests public procurement tenders from Eu
 
 ## Data Flow
 
-1. **Ingestion**: The orchestrator launches goroutines (via `errgroup`) for each data source. TED and dados.gov.pt clients fetch concurrently. Each source implements the `Source` interface (`Name()` + `Fetch()`), so new sources (e.g., BASE, OpenTender) can be added without modifying the orchestrator.
+**Ingestion.** The orchestrator spins up a goroutine per data source via `errgroup`. TED and dados.gov.pt fetch concurrently. Both implement the `Source` interface (`Name()` + `Fetch()`), so adding a new source (BASE, OpenTender, whatever) doesn't touch the orchestrator at all.
 
-2. **Normalization**: Source-specific normalizers map API responses to the unified `model.Tender` struct. Original API responses are preserved in the `raw_data` JSONB column for debugging and reprocessing.
+**Normalization.** Each source has its own normalizer that maps raw API responses into the shared `model.Tender` struct. The original JSON is kept in a `raw_data` JSONB column. I've needed this more than once for debugging normalizer bugs where the mapping was wrong but the original data was fine.
 
-3. **Storage**: Tenders are bulk-upserted using `ON CONFLICT (source_id)` to handle deduplication. The same tenders are indexed into Elasticsearch with Portuguese and English text analyzers for multi-language search.
+**Storage.** Tenders get bulk-upserted with `ON CONFLICT (source_id)` for deduplication. Same batch gets indexed into Elasticsearch with both Portuguese and English text analyzers, since procurement notices on TED can be in either language (or both).
 
-4. **Embedding**: Mistral AI `mistral-embed` generates 1024-dimensional vectors from tender title + description + buyer + CPV codes. Vectors are stored directly on the tender row using pgvector. Mistral's free tier requires no credit card, keeping the entire stack zero-cost to run.
+**Embedding.** Mistral AI `mistral-embed` generates 1024-dimensional vectors from a concatenation of the tender's title, description, buyer name, and CPV codes. Stored directly on the tender row via pgvector. Mistral's free tier means the whole stack runs at zero cost without a credit card, which matters for a demo project that someone needs to actually clone and run.
 
-5. **Matching**: When triggered for a company, the matcher generates an embedding from the company profile, queries pgvector for the top-100 similar tenders by cosine distance, then computes a composite score incorporating CPV overlap (Jaccard index) and value fit (exponential decay outside the company's preferred range).
+**Matching.** When you trigger matching for a company, the system generates an embedding from the company profile text, pulls the top-100 most similar tenders by cosine distance from pgvector, then layers on CPV overlap (Jaccard) and value fit (exponential decay outside the company's preferred range) to produce a final composite score.
 
 ## Data Model
 
@@ -94,77 +94,113 @@ SpotGov Pipeline is a Go service that ingests public procurement tenders from Eu
 └────────────────┘
 ```
 
+Three tables. `matches` is the join between tenders and companies, with the individual score components broken out so you can debug why a particular tender ranked where it did.
+
 ## Design Decisions
 
 ### GORM over raw SQL
-Auto-migration lets the schema evolve without maintaining separate migration files during rapid prototyping. The custom Zap logger integration surfaces slow queries (>1s threshold) without per-query noise, and the struct-tag-based model definitions keep the schema colocated with the Go types that use it. Considered raw `database/sql` with pgx for performance, but the query complexity here doesn't justify the boilerplate — there are no complex joins or CTEs where an ORM gets in the way, and GORM's `Clauses(OnConflict{})` made the bulk upsert logic clean.
+
+I went with GORM mainly for auto-migration. During early development the schema changed constantly, and maintaining separate migration files for a project that doesn't have a stable schema yet is busywork. The struct-tag-based model definitions mean the Go type *is* the schema, which keeps things in one place.
+
+I did consider raw `database/sql` with pgx. It would be faster, sure. But the queries here are simple: there are no complex joins, no CTEs, nothing where GORM's abstraction gets in the way. And `Clauses(OnConflict{})` gave me clean bulk upsert logic without hand-rolling the SQL. The custom Zap logger integration catches slow queries over 1s, which is enough observability without logging every `SELECT`.
 
 ### Chi over Gin/Echo
-Handlers are plain `http.HandlerFunc` — no framework-specific context wrappers, no hidden magic. Middleware is composable via `r.Use()` and `r.With()`, so the request pipeline is explicit. Gin was considered but its custom `gin.Context` creates lock-in: every handler signature is framework-specific, and moving away from it later means rewriting every endpoint. Echo has the same problem. Chi's middleware ecosystem (request ID, real IP, logging) is sufficient, and the zero-dependency approach means the binary stays lean.
+
+Handlers are plain `http.HandlerFunc`. No custom context wrappers, nothing framework-specific leaking into business logic. Middleware composes with `r.Use()` and `r.With()`, so you can read the router setup and know exactly what runs on each route.
+
+I looked at Gin first. The problem is `gin.Context` — once you're writing handlers that take `*gin.Context`, every handler in the codebase is coupled to Gin. If you ever want to move off it, you're rewriting every endpoint. Echo has the same issue. Chi avoids this entirely because it's just `net/http` underneath, and its middleware (request ID, real IP, logging) covers what I actually needed.
 
 ### pgvector over Qdrant/Pinecone
-Keeping vectors in PostgreSQL avoids adding another stateful service to the stack. At the current scale (tens of thousands of tenders, not millions), pgvector's IVFFlat index performs well — the approximate nearest neighbor overhead is negligible compared to the network round-trip a dedicated vector DB would add. Qdrant was considered for its filtering capabilities, but pgvector's ability to combine vector search with SQL `WHERE` clauses in a single query (e.g., filter by country + CPV before ranking) eliminates the two-phase filter-then-rank pattern. If the dataset grows past ~1M vectors, migrating to HNSW indexing or an external vector store becomes worthwhile.
 
-### pgvector on tender rows (not a separate table)
-There is a strict 1:1 relationship between tenders and their embeddings. A separate table would add JOIN overhead on every similarity query with no schema benefit. Considered a separate `tender_embeddings` table for cleaner separation, but profiling showed the JOIN adds ~2ms per query at scale with no upside — the embedding is never accessed without its tender.
+Another service in the stack means another thing to monitor, configure, and debug. At the scale this project operates at (tens of thousands of tenders, not millions), pgvector's IVFFlat index handles similarity search without breaking a sweat. The latency overhead of ANN is negligible compared to the network round-trip you'd pay talking to a separate vector DB.
 
-### Source interface for extensibility
+Qdrant has better filtering, arguably. But pgvector lets you combine vector search with SQL `WHERE` clauses in one query. Filter by country and CPV code, *then* rank by similarity, all in a single round-trip. With a dedicated vector DB you'd need to filter first, fetch IDs, then join back to Postgres. Two hops instead of one.
+
+If the dataset grows past about a million vectors, switching to HNSW indexing or an external store would make sense. Not a concern right now.
+
+### Embeddings on the tender row, not a separate table
+
+Tenders and embeddings are 1:1. Always. The embedding is never loaded without the tender it belongs to, and there's no use case where you'd want the embedding schema to diverge. I initially considered a `tender_embeddings` table for tidiness, but that JOIN adds about 2ms to every similarity query and buys you nothing. Keeping it on the same row means one index scan, one row fetch.
+
+### Source interface
+
 ```go
 type Source interface {
     Name() string
     Fetch(ctx context.Context, since time.Time) ([]model.Tender, error)
 }
 ```
-Adding BASE, OpenTender, or any OCDS-compliant source is a single struct implementing two methods. The orchestrator discovers nothing about source internals — it just calls `Fetch()` and upserts the results.
+
+Two methods. That's the entire contract for adding a new data source. The orchestrator doesn't know or care how a source gets its data — HTTP, scraping, CSV, whatever. It calls `Fetch()`, gets back tenders, upserts them. If you wanted to add BASE or OpenTender or any OCDS-compliant source, you'd write a struct with these two methods and register it. Nothing else changes.
 
 ### Elasticsearch over Typesense/Meilisearch
-TED publishes ~700K+ notices per year across all EU languages. Portuguese procurement text requires proper stemming and stop-word handling — Elasticsearch's built-in `portuguese` analyzer is production-grade and battle-tested, while Typesense's language support is limited to basic tokenization. Meilisearch was considered for its simpler setup, but it lacks multi-field analyzers (we need separate Portuguese and English analysis on the same field) and its sharding story is immature for datasets that grow year-over-year. Elasticsearch's mature bulk API and BM25 scoring also make it the natural choice for the text-relevance component of hybrid search.
 
-### Composite scoring with weighted components
+This one came down to language support. Portuguese procurement text needs real stemming and stop-word handling, not just tokenization. Elasticsearch's built-in `portuguese` analyzer handles this well; Typesense's language support is noticeably thinner.
+
+Meilisearch was tempting for its simpler setup. But it can't run separate analyzers on the same field (I need Portuguese *and* English analysis, since TED notices come in both), and its sharding is still immature for a dataset that grows every year. TED alone publishes over 700K notices annually. Elasticsearch's bulk API and BM25 scoring also fit naturally into the hybrid search design.
+
+### Composite scoring
+
 ```
 score = 0.4 × vector_similarity + 0.3 × bm25_score + 0.2 × cpv_overlap + 0.1 × value_fit
 ```
-Vector similarity captures semantic relevance. CPV overlap provides exact classification matching. Value fit ensures tenders are within the company's operational scale. Weights are configurable and can be tuned per customer. Considered a learned-to-rank model, but the training data doesn't exist yet — a weighted linear combination is interpretable, debuggable, and good enough to validate the product hypothesis before investing in ML infrastructure.
+
+Four signals, weighted by how much I trust each one. Vector similarity gets the most weight because semantic matching catches tenders that keyword search would miss entirely (a "building maintenance" company matching against a tender for "facility upkeep services"). CPV overlap is a hard classification signal. Value fit penalizes tenders that are orders of magnitude outside a company's operational range.
+
+The weights are configurable. A learned-to-rank model would be the right long-term answer, but there's no training data yet. This gets the product to a testable state where you can actually see if the matching makes sense, then collect feedback to train something better.
 
 ### Reciprocal Rank Fusion for hybrid search
-Combines BM25 (keyword relevance) and vector (semantic relevance) rankings without requiring normalized scores:
+
 ```
 score = 1/(k + rank_bm25) + 1/(k + rank_vector)    where k = 60
 ```
-k=60 follows the standard from Cormack, Clarke, and Buettcher's original reciprocal rank fusion paper, which showed this value performs robustly across diverse ranking pair combinations without task-specific tuning. The alternative was score-level fusion (normalize BM25 and cosine scores to the same scale, then combine), but BM25 scores are unbounded and dataset-dependent — normalization requires knowing the score distribution, which changes with every ingestion. RRF sidesteps this entirely by operating on ranks, not scores.
 
-### Structured logging with Zap
-Environment-aware: development mode gives colored console output with caller info; production mode emits JSON for log aggregation. Zero-allocation in the hot path. Considered `slog` (stdlib, Go 1.21+) for fewer dependencies, but Zap's `Named()` sub-loggers and `DPanic` level make it easier to trace logs across packages in a multi-source ingestion pipeline.
+k=60 comes from Cormack, Clarke, and Buettcher's original RRF paper. It works well across different ranking combinations without tuning, which matters here since I don't have relevance judgments to tune against.
+
+The other option was score-level fusion: normalize BM25 and cosine scores to the same scale, then combine. The problem is BM25 scores are unbounded and change depending on what's in the index. You'd need to know the score distribution, and that shifts every time you ingest new data. RRF avoids this by working with ranks instead of raw scores.
+
+### Zap over slog
+
+Both would work here. I went with Zap because its `Named()` sub-loggers make it easy to tag every log line with the originating package — when you're debugging an ingestion run that touches `ted`, `dados`, `orchestrator`, and `matcher`, being able to filter by component saves real time. `DPanic` is also useful during development: panic in dev, log in prod. `slog` (Go 1.21+) would save a dependency, but structured sub-loggers require more manual wiring.
+
+### Next.js for the frontend
+
+The frontend is deliberately minimal. A tender search page, a detail view, a company profile page. That's it. I chose Next.js 14 with the App Router over a Vite + React SPA because server-side rendering makes the initial load fast without needing a loading skeleton state for every page. For a dashboard that's mostly displaying server data, SSR is the simpler model — fetch in the server component, render, done. No client-side state management, no loading spinners, no hydration mismatches to debug.
+
+This is a backend-heavy project and the frontend reflects that. I spent my time on the ingestion pipeline and matching engine rather than building a polished UI. The frontend exists to make the backend's output visible, not to be the thing being evaluated.
 
 ## Concurrency Model
 
-The ingestion orchestrator uses `golang.org/x/sync/errgroup` for structured concurrency:
-- Each data source runs in its own goroutine — in practice this means 2 goroutines today (TED, dados), scaling linearly as sources are added. The goroutine count is bounded by the number of registered sources, not by data volume.
-- Results are collected into a shared `[]model.Tender` slice protected by a `sync.Mutex`. The mutex is only held during the append (microseconds), not during the HTTP fetch, so sources never block each other.
-- Individual source failures are logged as errors but return `nil` from the goroutine — `errgroup.Wait()` only propagates errors that would indicate a systemic problem, not a single flaky API.
-- The TED client enforces a 200ms sleep between paginated requests to avoid hammering the API. This is a cooperative rate limit, not a token bucket — appropriate for a single-instance service hitting a public API, where the goal is politeness rather than throughput maximization.
-- The shared `errgroup` context enables cancellation propagation: if the parent context is cancelled (e.g., server shutdown), in-flight HTTP requests are abandoned via `http.NewRequestWithContext`.
+The orchestrator uses `golang.org/x/sync/errgroup` for structured concurrency. In practice, this means 2 goroutines today (TED + dados), scaling linearly as sources are added. The goroutine count is bounded by the number of registered sources, not by data volume, so this doesn't explode.
+
+Results go into a shared `[]model.Tender` slice protected by `sync.Mutex`. The lock is only held during the append — microseconds — not during the HTTP fetch itself, so sources never actually block each other.
+
+Source failures return `nil` from the goroutine rather than an error. `errgroup.Wait()` only surfaces errors that indicate something systemic, not one flaky API returning 503. If TED is down, you still get dados data.
+
+The TED client sleeps 200ms between paginated requests. This is a cooperative rate limit, not a token bucket. For a single-instance service hitting a public API, the goal is politeness, not maximizing throughput. Nobody wants their IP blocked because the ingestion service hammered TED's endpoint.
+
+The shared `errgroup` context handles shutdown: if the parent context is cancelled, in-flight HTTP requests get abandoned via `http.NewRequestWithContext`. No orphaned goroutines.
 
 ## Error Handling and Resilience
 
-The pipeline is designed to degrade gracefully rather than fail atomically:
+The general principle: partial success is better than total failure. If one thing breaks, the rest should keep working.
 
-- **Source failures are isolated.** The orchestrator wraps each source in its own goroutine. If the TED API is down or times out, dados.gov.pt ingestion still completes, and vice versa. Failed sources are logged as errors but don't propagate — the pipeline upserts whatever it successfully fetched. This means a partial ingestion (e.g., 200 TED notices but 0 from dados) is always better than no ingestion.
+**Source failures are isolated.** If TED is down, dados.gov.pt still runs. The pipeline upserts whatever it got. 200 TED tenders and 0 from dados is still 200 tenders more than if the whole run had crashed.
 
-- **Database connection retries with exponential backoff.** On startup, PostgreSQL connection attempts retry 3 times with 2s/4s/8s backoff. This handles the common Docker Compose race where the API container starts before Postgres finishes initialization. After startup, GORM's connection pool handles transient disconnects transparently.
+**Database retries on startup.** PostgreSQL connection retries 3 times with 2s/4s/8s exponential backoff. This mostly exists because Docker Compose starts all containers simultaneously, and the Go service boots faster than Postgres finishes initializing. After startup, GORM's connection pool handles transient issues on its own.
 
-- **Embedding failures don't block ingestion.** The OpenAI API key is optional — if missing, the server starts with matching features disabled and logs a warning. During batch embedding generation, individual failures are logged and skipped; the remaining tenders still get their embeddings. Tenders without embeddings are tracked via `WHERE embedding IS NULL` and can be retried on the next call.
+**Embeddings are optional.** No Mistral API key? The server starts anyway with matching disabled and a log warning. During batch embedding, if one tender fails, it gets skipped — the rest still go through. Failed ones show up via `WHERE embedding IS NULL` for the next run to pick up. Didn't want a rate limit at tender #47 to waste the work already done on #1 through #46.
 
-- **Elasticsearch unavailability doesn't break reads.** The tender list and detail endpoints query PostgreSQL directly. Elasticsearch is only used for the `/tenders/search` endpoint. If ES is temporarily unreachable, search returns an error but CRUD operations continue normally.
+**Elasticsearch going down doesn't break the app.** Tender list and detail endpoints read from PostgreSQL. ES is only needed for `/tenders/search`. If it's unreachable, search returns an error but everything else keeps working.
 
-- **Upsert-based deduplication is idempotent.** Re-running ingestion against the same date range is safe — `ON CONFLICT (source_id)` updates existing rows instead of creating duplicates. This means recovery from a partial failure is just "run it again."
+**Ingestion is idempotent.** Running the same ingestion twice doesn't create duplicates. `ON CONFLICT (source_id)` updates the existing row. Recovery from a failed run is literally just running it again.
 
-- **Observability.** Every request carries a unique ID via Chi's `middleware.RequestID`, propagated through the context. Zap's `Named()` sub-loggers tag each log line with the originating package (`ted`, `dados`, `orchestrator`, `matcher`), so a single ingestion run can be traced end-to-end by filtering on the request ID. The GORM logger flags slow queries (>1s) as warnings, giving immediate visibility into database bottlenecks without enabling full query logging.
+**Observability.** Every request gets a unique ID via Chi's `middleware.RequestID`. Zap sub-loggers tag lines with the originating package. A single ingestion run can be traced end-to-end by filtering on request ID across `ted`, `dados`, `orchestrator`, and `matcher` logs. The GORM logger flags queries over 1s as warnings — enough to spot bottlenecks without drowning in query logs.
 
-## Future Considerations
+## What I'd Do Next
 
-- **Scheduled ingestion.** Currently triggered manually via API. A cron-based background goroutine (or external scheduler) would run ingestion every 6 hours, ensuring new TED notices are captured within the same day they're published. This is the single highest-impact improvement for making the system useful without human intervention.
+**Scheduled ingestion** is the biggest gap. Right now you trigger ingestion via API call. A background goroutine on a 6-hour interval (or just cron) would keep the data fresh without anyone having to remember to hit the endpoint.
 
-- **Event-driven indexing via message queue.** Right now, DB upsert → ES indexing → embedding generation happens synchronously in the ingestion path. Decoupling these with a message queue (Kafka, NATS) would let ingestion complete faster and let indexing/embedding retry independently on failure — important when OpenAI rate limits hit during a large batch.
+**Async indexing.** DB upsert, ES indexing, and embedding generation all happen synchronously right now. Decoupling them with a message queue (Kafka or NATS) would speed up the ingestion path and let each downstream step retry independently. This matters most when Mistral rate-limits you halfway through a large batch.
 
-- **Webhook notifications.** Companies that configure a profile want to know when a high-scoring tender appears, not poll the dashboard. A notification system that fires when a new match exceeds a score threshold would close the loop between ingestion and user action.
+**Notifications.** The whole point of matching is telling a company when something relevant shows up. Polling a dashboard doesn't cut it. A webhook that fires when a match crosses a score threshold is the obvious next step.

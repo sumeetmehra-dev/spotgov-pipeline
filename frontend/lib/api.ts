@@ -71,10 +71,15 @@ export function getTender(id: string) {
   return fetchAPI<Tender>(`/api/v1/tenders/${id}`);
 }
 
-export function searchTenders(q: string, limit = 20) {
-  return fetchAPI<{ data: Tender[]; query: string; count: number }>(
+export async function searchTenders(q: string, limit = 20) {
+  const res = await fetchAPI<{ data: Array<Tender | { tender: Tender; score: number }>; query: string; count: number; engine?: string }>(
     `/api/v1/tenders/search?q=${encodeURIComponent(q)}&limit=${limit}`
   );
+  // Normalize: ES returns {tender, score} wrappers, DB returns plain Tender objects.
+  const tenders: Tender[] = (res.data || []).map((item) =>
+    'tender' in item ? item.tender : item
+  );
+  return { data: tenders, query: res.query, count: res.count };
 }
 
 export function triggerIngestion() {
