@@ -1,8 +1,8 @@
 # Procura
 
-European public procurement data is fragmented across dozens of national portals and the EU's TED database, each with its own schema, language, and query interface. Companies looking for relevant contracts either pay for aggregator subscriptions or spend hours manually scanning multiple sites. Most miss tenders they'd be qualified for because keyword search can't bridge the gap between how a company describes itself and how a buyer writes a contract notice.
+European public procurement data is scattered across dozens of national portals and the EU's TED database. Different schemas, different languages, different query interfaces. Companies hunting for contracts either pay for aggregator subscriptions or burn hours scanning sites manually. Most miss tenders they'd be perfectly qualified for, because keyword search can't bridge the gap between how a company describes itself and how a government buyer writes a contract notice.
 
-Procura pulls tenders from TED and Portugal's dados.gov.pt, normalizes them into a unified schema, indexes them with Elasticsearch (Portuguese + English analyzers), generates Mistral AI embeddings for semantic matching, and scores them against company profiles using a composite ranking that combines vector similarity, BM25 text relevance, CPV code overlap, and contract value fit.
+Procura pulls tenders from TED and Portugal's dados.gov.pt, normalizes them into a single schema, and indexes them with Elasticsearch (Portuguese + English analyzers). It then generates Mistral AI embeddings and scores tenders against company profiles, ranking by a mix of vector similarity, BM25 text relevance, CPV code overlap, and contract value fit.
 
 <img width="1920" height="961" alt="Screenshot 2026-03-26 at 6 11 54 PM" src="https://github.com/user-attachments/assets/7c4219ea-561c-4f78-bd4f-d65772eb54d7" />
 
@@ -70,6 +70,34 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
 - `deadline_after` — Filter by deadline (format: `2024-06-01`)
 - `q` — Text search on title and description
 
+### Match Result Example
+
+`GET /api/v1/companies/:id/matches` returns scored tenders with individual signal breakdowns:
+
+```json
+{
+  "matches": [
+    {
+      "tender": {
+        "id": "b85617ef-a411-42fd-8014-0b8bb7104a9b",
+        "title": "Serviços de manutenção de edifícios — Lisboa",
+        "buyer_name": "Câmara Municipal de Lisboa",
+        "estimated_value": 280000,
+        "cpv_codes": ["50700000"],
+        "deadline": "2026-04-28T00:00:00Z"
+      },
+      "score": 0.79,
+      "vector_score": 0.91,
+      "bm25_score": 0.74,
+      "cpv_overlap": 0.50,
+      "value_fit": 0.88
+    }
+  ]
+}
+```
+
+Each signal is exposed so you can see *why* a tender ranked where it did — not just that it did. Vector similarity (0.91) shows strong semantic overlap between the company profile and tender description, while CPV overlap (0.50) is lower because maintenance (`50700000`) and construction (`45000000`) share a division but not a group.
+
 ## Tech Stack
 
 | Component | Technology | Why |
@@ -114,9 +142,21 @@ internal/
     ted/             — TED API client + normalizer
     dados/           — dados.gov.pt client + normalizer
   search/            — Elasticsearch client + indexer
-  embedding/         — OpenAI client + pgvector store
+  embedding/         — Mistral AI client + pgvector store
   matching/          — Scoring algorithm + matcher
   handler/           — HTTP handlers (tender, company, match, health)
   server/            — Chi router setup
 frontend/            — Next.js dashboard
 ```
+
+## What's Not Here Yet
+
+Ingestion is manual right now. You hit an API endpoint to trigger it. A background goroutine on a 6-hour interval (or just cron) is the obvious next step.
+
+DB upsert, ES indexing, and embedding generation all happen synchronously. Works fine at current scale, but a message queue would let each step fail and retry on its own. Matters most when Mistral rate-limits you mid-batch.
+
+There's no notification system. Companies have to check the dashboard to see new matches, which defeats the purpose. A webhook that fires when a match crosses a score threshold would close that gap.
+
+The data model has `tenant_id` on companies and matches, but the API doesn't enforce scoping yet. It's like the plumbing is there but the access control isn't.
+
+More detail in [ARCHITECTURE.md](ARCHITECTURE.md#what-id-do-next).

@@ -20,7 +20,7 @@ func Load() Config {
 	return Config{
 		Port:             getEnvInt("PORT", 8080),
 		Env:              getEnvStr("ENV", "dev"),
-		DatabaseURL:      getEnvStr("DATABASE_URL", "postgres://spotgov:spotgov_pass@localhost:5432/spotgov?sslmode=disable"),
+		DatabaseURL:      getEnvStr("DATABASE_URL", "postgres://procura:procura_pass@localhost:5432/procura?sslmode=disable"),
 		ElasticsearchURL: getEnvStr("ELASTICSEARCH_URL", "http://localhost:9200"),
 		MistralKey:       getEnvStr("MISTRAL_API_KEY", ""),
 		TEDBaseURL:       getEnvStr("TED_BASE_URL", "https://api.ted.europa.eu"),
