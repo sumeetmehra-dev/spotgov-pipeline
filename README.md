@@ -4,11 +4,11 @@ European public procurement data is scattered across dozens of national portals 
 
 Procura pulls tenders from TED and Portugal's dados.gov.pt, normalizes them into a single schema, and indexes them with Elasticsearch (Portuguese + English analyzers). It then generates Mistral AI embeddings and scores tenders against company profiles, ranking by a mix of vector similarity, BM25 text relevance, CPV code overlap, and contract value fit.
 
-<img width="1920" height="961" alt="Screenshot 2026-03-26 at 6 11 54 PM" src="https://github.com/user-attachments/assets/7c4219ea-561c-4f78-bd4f-d65772eb54d7" />
+<img width="1920" height="958" alt="Screenshot 2026-03-31 at 11 41 57 AM" src="https://github.com/user-attachments/assets/7bd38fa2-efc6-4a85-aa1e-783ddaa40b2f" />
 
-<img width="1920" height="960" alt="Screenshot 2026-03-26 at 6 12 54 PM" src="https://github.com/user-attachments/assets/d99d9bdd-1a99-4e86-94f3-f6ce2ee05d55" />
+<img width="1920" height="954" alt="Screenshot 2026-03-31 at 11 50 08 AM" src="https://github.com/user-attachments/assets/3f4033b1-a630-4288-9c57-78d6093dd58d" />
 
-<img width="1920" height="962" alt="Screenshot 2026-03-26 at 6 13 25 PM" src="https://github.com/user-attachments/assets/2a44edde-fe55-414c-a703-7e771e642c0e" />
+<img width="1920" height="955" alt="Screenshot 2026-03-31 at 11 49 15 AM" src="https://github.com/user-attachments/assets/0304d5ce-1fcf-4b8d-95bd-b06a1d2fb95b" />
 
 
 ## Quick Start
